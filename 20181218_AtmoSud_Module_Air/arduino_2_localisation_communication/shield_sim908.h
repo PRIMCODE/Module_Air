@@ -1,7 +1,5 @@
 #include <ArduinoJson.h>
 
-#include "configuration.h"
-
 #include <stdarg.h>
 #include <stdlib.h>
 #include <math.h>
@@ -61,7 +59,9 @@ char GPST[3]; // Variable verif si GPS actif
 
 int lecture = 0;
 
+char url[100] = "http://apigeoloc.atmosud.org/getpollution?"; // URL recup et ses parametres (paraURL)
 char paraURL[100];
+char url2[150] = "http://vps345683.ovh.net:9876/import?"; // URL envoi et ses parametres (paraURL2)
 char paraURL2[100];
 
 char PARTM10[6] = "0";
@@ -82,24 +82,62 @@ void setup()
 {
   pinMode(onModulePin, OUTPUT);
   Serial.begin(115200);
-  Serial.println("Powering shield ON...");
+  Serial.println("Starting...");
   power_on();
-  getLocation(longitude, latitude);
-  Serial.print("longitude: ");
-  Serial.println(longitude);
-  Serial.print("latitude: ");
-  Serial.println(latitude);
-  sprintf(paraURL, "%s?pol=%s&lon=%s&lat=%s&ech=p%d", URL_RCV, pol[1], longitude, latitude, echeance);
-  Serial.println(paraURL);
-  getJSON(paraURL);
-  delay(5000);
+  delay(3000);
+
+  Wire.begin(8); // join i2c bus (address optional for master)
+  Wire.onRequest(ReqEcran);
+
+  //sets the PIN code
+  snprintf(aux_str, sizeof(aux_str), "AT+CPIN=%s", pin);
+  sendATcommand(aux_str, "OK", 2000);
+  delay(3000);
+
+  while (sendATcommand2("AT+CREG?", "+CREG: 0,1", "+CREG: 0,5", 2000) == 0, RegTry++);
+  if (RegTry == 10)
+  {
+    software_Reset();
+  }
+
+  // sets APN , user name and password
+  sendATcommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\"", "OK", 2000);
+  snprintf(aux_str, sizeof(aux_str), "AT+SAPBR=3,1,\"APN\",\"%s\"", apn);
+  sendATcommand(aux_str, "OK", 2000);
+
+  snprintf(aux_str, sizeof(aux_str), "AT+SAPBR=3,1,\"USER\",\"%s\"", user_name);
+  sendATcommand(aux_str, "OK", 2000);
+
+  snprintf(aux_str, sizeof(aux_str), "AT+SAPBR=3,1,\"PWD\",\"%s\"", password);
+  sendATcommand(aux_str, "OK", 2000);
+  while (sendATcommand("AT+SAPBR=1,1", "OK", 20000) == 0, tour++);
+
+  sendATcommand("AT+CGPSPWR=1", "OK", 2000);
+  sendATcommand("AT+CGPSRST=0", "OK", 2000);
+
+  TryGPS = millis();
+  // waits for fix GPS
+  while ((sendATcommand("AT+CGPSSTATUS?", "2D Fix", 2000) ||
+          sendATcommand("AT+CGPSSTATUS?", "3D Fix", 2000)) == 0)
+  {
+    if ((millis() - TryGPS) > 900000 && (sendATcommand("AT+CGPSSTATUS?", "3D Fix", 2000)) == 0 ) // Test de fixation GPS sur 15 minutes
+    {
+      //Serial.println("Fix GPS OK");
+      Serial.println("Temps dépassé");
+      Serial.print("VerGPS :");
+      Serial.println(VerGPS);
+      VerGPS++;
+      Serial.print("VerGPS :");
+      Serial.println(VerGPS);
+      strcpy (longitude, "7.277838");
+      strcpy (latitude, "43.700544");
+      break;
+    }
+  }
 }
 
 void loop()
 {
-  getJSON(paraURL);
-  delay(5000);
-/*
   if (VerGPS == 1)
   {
     GSMRecup();
@@ -138,12 +176,10 @@ void loop()
       software_Reset();
     }
   }
-  */
 }
 
 //************************************************************************************
 
-/*
 void GSMRecup()
 {
   // Initializes HTTP service
@@ -279,6 +315,8 @@ void GSMRecup()
   sendATcommand("AT+HTTPTERM", "OK", 5000);
 }
 
+//************************************************************************************
+
 void GSMEnvoi()
 {
   // Initializes HTTP service
@@ -317,6 +355,8 @@ void GSMEnvoi()
   }
   sendATcommand("AT+HTTPTERM", "OK", 5000);
 }
+
+//************************************************************************************
 
 void GPS()
 {
@@ -394,6 +434,8 @@ void GPS()
   delay(3500);
 }
 
+//************************************************************************************
+
 void dmd2dd_arduino( char s_valeurDMD[] ) // Code de recalcul des coordonnées - Raph
 {
   // remise à zero de return_dmd2dd
@@ -441,9 +483,105 @@ void dmd2dd_arduino( char s_valeurDMD[] ) // Code de recalcul des coordonnées -
   // Conversion du String en char[]
   string_return_dmd2dd.toCharArray(return_dmd2dd, 11);
 }
-*/
 
 //*****************************************************************************************
+
+int8_t sendATcommand(char* ATcommand, char* expected_answer1, unsigned int timeout)
+{
+  uint8_t x = 0,  answer = 0;
+  char response[150];
+  unsigned long previous;
+
+  memset(response, '\0', 100);    // Initialize the string
+  delay(100);
+
+  while ( Serial.available() > 0) Serial.read();   // Clean the input buffer
+  Serial.println(ATcommand);    // Send the AT command
+  x = 0;
+  previous = millis();
+  // this loop waits for the answer
+  do {
+    if (Serial.available() != 0)
+    {
+      response[x] = Serial.read();
+      x++;
+      // check if the desired answer is in the response of the module
+      if (strstr(response, expected_answer1) != NULL)
+      {
+        answer = 1;
+      }
+    }
+    // Waits for the asnwer with time out
+  }
+  while ((answer == 0) && ((millis() - previous) < timeout));
+  return answer;
+}
+
+//************************************************************************************
+
+void power_on()
+{
+  uint8_t answer = 0;
+
+  // checks if the module is started
+  answer = sendATcommand("AT", "OK", 2000);
+  if (answer == 0)
+  {
+    // power on pulse
+    digitalWrite(onModulePin, HIGH);
+    delay(3000);
+    digitalWrite(onModulePin, LOW);
+
+    // waits for an answer from the module
+    while (answer == 0)
+    {
+      // Send AT every two seconds and wait for the answer
+      answer = sendATcommand("AT", "OK", 2000);
+    }
+  }
+}
+
+//************************************************************************************
+
+int8_t sendATcommand2(char* ATcommand, char* expected_answer1, char* expected_answer2, unsigned int timeout)
+{
+  uint8_t x = 0,  answer = 0;
+  char response[150];
+  unsigned long previous;
+
+  memset(response, '\0', 100);    // Initialize the string
+  delay(100);
+
+  while ( Serial.available() > 0) Serial.read();   // Clean the input buffer
+  Serial.println(ATcommand);    // Send the AT command
+
+  x = 0;
+  previous = millis();
+  // this loop waits for the answer
+  do
+  {
+    if (Serial.available() != 0)
+    {
+      response[x] = Serial.read();
+      x++;
+      // check if the desired answer 1 is in the response of the module
+      if (strstr(response, expected_answer1) != NULL)
+      {
+        answer = 1;
+      }
+      // check if the desired answer 2 is in the response of the module
+      if (strstr(response, expected_answer2) != NULL)
+      {
+        answer = 2;
+      }
+    }
+    // Waits for the asnwer with time out
+  }
+  while ((answer == 0) && ((millis() - previous) < timeout));
+  return answer;
+}
+
+//************************************************************************************
 
 void ReqEcran()
 {
