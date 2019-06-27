@@ -22,7 +22,7 @@ Adafruit_FONA fona = Adafruit_FONA(FONA_RST);
 SoftwareSerial fonaSS = SoftwareSerial(FONA_TX, FONA_RX);
 SoftwareSerial *fonaSerial = &fonaSS;
 
-void getLocation( char * longitude, char * latitude)
+void GPS( char * longitude, char * latitude)
 {
   uint16_t returncode;
   // this is a large buffer for replies
@@ -68,14 +68,12 @@ void power_on()
       Serial.println(F("???")); break;
   }
 
-/*
   // Print module IMEI number.
   char imei[16] = {0}; // MUST use a 16 character buffer for IMEI!
   uint8_t imeiLen = fona.getIMEI(imei);
   if (imeiLen > 0) {
     Serial.print("Module IMEI: "); Serial.println(imei);
   }
-  */
 
   // Optionally configure a GPRS APN, username, and password.
   // You might need to do this to access your network's GPRS/data
@@ -83,11 +81,12 @@ void power_on()
   // and password values.  Username and password are optional and
   // can be removed, but APN is required.
   //fona.setGPRSNetworkSettings(F("m2mpremium"), F("sfr"), F("sfr"));
+  fona.setGPRSNetworkSettings(F("ebouyguestel.com"));
 
   // Optionally configure HTTP gets to follow redirects over SSL.
   // Default is not to follow SSL redirects, however if you uncomment
   // the following line then redirects over SSL will be followed.
-  //fona.setHTTPSRedirect(true);
+  fona.setHTTPSRedirect(true);
 
   Serial.println("delay 8s");
   delay(8000);
@@ -98,21 +97,31 @@ void power_on()
   delay(4000);
 }
 
-void getJSON(char * url)
+void http_get(char * url, char response[])
 {
+  Serial.println(url);
   uint16_t statuscode;
   int16_t length;
   if(!fona.HTTP_GET_start(url, &statuscode, (uint16_t *)&length )) {
-    Serial.println("getJSON failed!");
+    Serial.println("http_get failed");
   }
+  int i = 0;
+  //char response[length];
   while (length > 0) {
   	while (fona.available()) {
-	  char c = fona.read();
-	  Serial.write(c);
+	  //char c = fona.read();
+	  response[i] = fona.read();
+	  //Serial.write(c);
 	  length--;
+	  i++;
 	  if (! length) break;
 	}
   }
-  Serial.println("getJSON done");
+  //Serial.println("## http_get done");
   fona.HTTP_GET_end();
+  //Serial.println(response);
+}
+
+void sendData(char * url)
+{
 }

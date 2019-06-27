@@ -84,21 +84,36 @@ void setup()
   Serial.begin(115200);
   Serial.println("Powering shield ON...");
   power_on();
-  getLocation(longitude, latitude);
+
+
+  delay(3000);
+  Wire.begin(8); // join i2c bus (address optional for master)
+  Wire.onRequest(ReqEcran);
+
+
+  GPS(longitude, latitude);
   Serial.print("longitude: ");
   Serial.println(longitude);
   Serial.print("latitude: ");
   Serial.println(latitude);
-  sprintf(paraURL, "%s?pol=%s&lon=%s&lat=%s&ech=p%d", URL_RCV, pol[1], longitude, latitude, echeance);
-  Serial.println(paraURL);
-  getJSON(paraURL);
-  delay(5000);
+  //delay(5000);
 }
 
 void loop()
 {
-  getJSON(paraURL);
+  GSMRecup();
+  //Co2PM();
+  //GSMEnvoi();
+  lecture++;
+  Serial.println("delay 5s");
   delay(5000);
+  if (lecture == 4)
+  {
+    lecture = 0;
+  }
+  Serial.print("Lecture : ");
+  Serial.println(lecture);
+
 /*
   if (VerGPS == 1)
   {
@@ -143,9 +158,51 @@ void loop()
 
 //************************************************************************************
 
-/*
 void GSMRecup()
 {
+  sprintf(paraURL, "%s?pol=%s&lon=%s&lat=%s&ech=p%d", URL_RCV, pol[lecture], longitude, latitude, echeance);
+  char res[140];
+  http_get(paraURL, res);
+  Serial.print("response=");
+  Serial.println(res);
+  const size_t bufferSize = JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(3) + 50;
+  DynamicJsonBuffer jsonBuffer(bufferSize);
+
+
+  const char* json = res;
+
+  JsonObject& root = jsonBuffer.parseObject(json);
+
+  JsonObject& data = root["data"];
+  const char* data_ech = data["ech"]; // "p0"
+  const char* data_pol = data["pol"]; // "ISA"
+  const char* data_valeur = data["valeur"]; // "40"
+
+  const char* status = root["status"]; // "ok
+
+  Serial.print("Poluant: ");
+  Serial.println(data_pol);
+  Serial.print("valeur du Poluant: ");
+  Serial.println(data_valeur);
+  if (lecture == 0)
+  {
+    strcpy(ISA, data_valeur);
+  }
+  else if (lecture == 1)
+  {
+    strcpy(NO2, data_valeur);
+  }
+  else if (lecture == 2)
+  {
+    strcpy(O3, data_valeur);
+  }
+  else if (lecture == 3)
+  {
+    strcpy(PM10, data_valeur);
+  }
+
+
+/*
   // Initializes HTTP service
   answer = sendATcommand("AT+HTTPINIT", "OK", 10000);
   if (answer == 1)
@@ -277,10 +334,17 @@ void GSMRecup()
     errgsm++;
   }
   sendATcommand("AT+HTTPTERM", "OK", 5000);
+  */
 }
 
 void GSMEnvoi()
 {
+  sprintf(paraURL2, "%s?lon=%s&lat=%s&time=2017-11-02_12:34:56&value1=%s&value2=%s&value3=%s", URL_SND, longitude, latitude, PARTM25, PARTM10, Co2);
+  char res[512];
+  http_get(paraURL2, res);
+  Serial.print("response=");
+  Serial.println(res);
+/*
   // Initializes HTTP service
   answer = sendATcommand("AT+HTTPINIT", "OK", 10000);
   if (answer == 1)
@@ -316,8 +380,10 @@ void GSMEnvoi()
     Serial.println("Error initializating");
   }
   sendATcommand("AT+HTTPTERM", "OK", 5000);
+  */
 }
 
+/*
 void GPS()
 {
   // Clean the input buffer
@@ -471,13 +537,17 @@ void ReqEcran()
 
 void Co2PM()
 {
+  Serial.println("Co2PM 1");
   memset(Co2, '\0', 5);
   memset(PARTM25, '\0', 6);
   memset(PARTM10, '\0', 6);
+  Serial.println("Co2PM 2");
   
   Wire.requestFrom(10, 20);    // request from #10, 8 char
+  Serial.println("Co2PM 3");
   while (Wire.available())
   { // slave may send less than requested
+  Serial.println("Co2PM 4");
     char s[20];
     int x = 0;
     for (int y = 0; y < 21 ; y++)
@@ -490,6 +560,7 @@ void Co2PM()
     Serial.println(s);         // print the character
     //Coupe à chaque "," le contenu de S
     strtok(s, ",");
+  Serial.println("Co2PM 5");
 
     //Attribut à Val1,2,3 les valeurs recuperees a chaques decoupage
     strcpy(PARTM25, strtok(NULL, ", "));

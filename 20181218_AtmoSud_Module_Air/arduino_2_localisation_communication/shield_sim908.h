@@ -59,9 +59,9 @@ char GPST[3]; // Variable verif si GPS actif
 
 int lecture = 0;
 
-char url[100] = "http://apigeoloc.atmosud.org/getpollution?"; // URL recup et ses parametres (paraURL)
+char url[100] = ""; // URL recup et ses parametres (paraURL)
 char paraURL[100];
-char url2[150] = "http://vps345683.ovh.net:9876/import?"; // URL envoi et ses parametres (paraURL2)
+char url2[150] = ""; // URL envoi et ses parametres (paraURL2)
 char paraURL2[100];
 
 char PARTM10[6] = "0";
